@@ -548,6 +548,69 @@
     touch-action:manipulation;
     image-rendering:pixelated;
   }
+  /* ---------- MOBILE TOUCH CONTROLS (joystick + jump button) ----------
+     Hidden entirely on desktop/PC via the pointer:coarse + hover:none
+     media query below, so mouse-driven players never see them. */
+  .mobile-controls{
+    position:absolute;
+    inset:0;
+    top:41px;
+    display:none;
+    pointer-events:none;
+  }
+  @media (hover:none) and (pointer:coarse){
+    .mobile-controls{ display:block; }
+  }
+  .joystick-base{
+    position:absolute;
+    left:18px;
+    bottom:18px;
+    width:108px;
+    height:108px;
+    border-radius:50%;
+    background:rgba(20,12,6,0.32);
+    border:3px solid rgba(255,255,255,0.55);
+    pointer-events:auto;
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .joystick-knob{
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:48px;
+    height:48px;
+    margin:-24px 0 0 -24px;
+    border-radius:50%;
+    background:rgba(255,255,255,0.8);
+    border:3px solid rgba(20,12,6,0.5);
+    pointer-events:none;
+    transition:background 0.1s ease;
+  }
+  .jump-btn{
+    position:absolute;
+    right:22px;
+    bottom:22px;
+    width:86px;
+    height:86px;
+    border-radius:50%;
+    background:rgba(216,64,46,0.78);
+    border:3px solid rgba(255,255,255,0.7);
+    box-shadow:3px 3px 0 rgba(0,0,0,0.3);
+    color:#fff;
+    font-family:'Silkscreen', monospace;
+    font-size:13px;
+    letter-spacing:0.5px;
+    pointer-events:auto;
+    touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+    cursor:pointer;
+  }
+  .jump-btn:active{
+    background:rgba(216,64,46,0.95);
+    transform:scale(0.93);
+  }
+
   .game-overlay{
     position:absolute;
     inset:0;
@@ -903,6 +966,13 @@
         <button class="mute-btn" id="muteBtn" type="button" aria-label="Mute sound" title="Mute sound">🔊</button>
       </div>
       <canvas id="sdgGame" width="1350" height="480" aria-label="Mini platformer game — jump over pipes and holes to reach flags"></canvas>
+
+      <div class="mobile-controls" id="mobileControls" aria-hidden="true">
+        <div class="joystick-base" id="joystickBase">
+          <div class="joystick-knob" id="joystickKnob"></div>
+        </div>
+        <button class="jump-btn" id="jumpBtn" type="button" tabindex="-1">JUMP</button>
+      </div>
 
       <div class="game-overlay" id="gameStartOverlay">
         <p class="pixel overlay-title">WORLD 4-1</p>
@@ -2659,6 +2729,89 @@
     canvas.addEventListener('pointerdown', jump);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+
+    // ---------- Mobile touch controls (joystick + jump button) ----------
+    // Only ever visible/interactive on touch devices (see the
+    // `pointer:coarse` media query in CSS) — desktop/mouse players never
+    // see this UI, but the listeners are harmless to attach either way.
+    (function setupMobileControls(){
+      const base = document.getElementById('joystickBase');
+      const knob = document.getElementById('joystickKnob');
+      const jumpBtn = document.getElementById('jumpBtn');
+      if(!base || !knob || !jumpBtn) return;
+
+      const MAX_R = 34;     // how far the knob can travel from center, in px
+      const DEAD_ZONE = 10; // ignore tiny nudges near the center
+      let touchId = null;
+
+      function moveKnob(dx, dy){
+        knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      }
+      function resetKnob(){
+        moveKnob(0, 0);
+      }
+
+      function updateFromPoint(clientX, clientY){
+        const rect = base.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        let dx = clientX - cx;
+        let dy = clientY - cy;
+        const dist = Math.hypot(dx, dy);
+        if(dist > MAX_R){
+          dx = (dx / dist) * MAX_R;
+          dy = (dy / dist) * MAX_R;
+        }
+        moveKnob(dx, dy);
+        if(dx > DEAD_ZONE){
+          keys.right = true; keys.left = false;
+        } else if(dx < -DEAD_ZONE){
+          keys.left = true; keys.right = false;
+        } else {
+          keys.left = false; keys.right = false;
+        }
+      }
+
+      function findTouch(touchList){
+        for(let i = 0; i < touchList.length; i++){
+          if(touchList[i].identifier === touchId) return touchList[i];
+        }
+        return null;
+      }
+
+      function onTouchStart(e){
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        touchId = t.identifier;
+        updateFromPoint(t.clientX, t.clientY);
+      }
+      function onTouchMove(e){
+        if(touchId === null) return;
+        const t = findTouch(e.changedTouches);
+        if(!t) return;
+        e.preventDefault();
+        updateFromPoint(t.clientX, t.clientY);
+      }
+      function onTouchEnd(e){
+        if(touchId === null) return;
+        const t = findTouch(e.changedTouches);
+        if(!t) return;
+        touchId = null;
+        keys.left = false;
+        keys.right = false;
+        resetKnob();
+      }
+
+      base.addEventListener('touchstart', onTouchStart, {passive:false});
+      base.addEventListener('touchmove', onTouchMove, {passive:false});
+      base.addEventListener('touchend', onTouchEnd, {passive:false});
+      base.addEventListener('touchcancel', onTouchEnd, {passive:false});
+
+      jumpBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        jump();
+      }, {passive:false});
+    })();
 
     // initial static frame before start
     resetGame();
